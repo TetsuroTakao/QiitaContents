@@ -156,7 +156,8 @@ Debugについては、launch.jsonとtasks.jsonを%新しいプロジェクト�
             "args": [],
             "cwd": "${workspaceFolder}/AspireSample.AppHost",
             "stopAtEntry": false,
-            "preLaunchTask": "build"
+            "preLaunchTask": "build",
+            "requireExactSource": false
         }
     ]
 }
@@ -183,14 +184,14 @@ Debugについては、launch.jsonとtasks.jsonを%新しいプロジェクト�
 }
 ```
 
-tasks.jsonのargsパラメーターについては[オフィシャルブログ「dotnet build」](https://learn.microsoft.com/ja-jp/dotnet/core/tools/dotnet-build)を参照ください。
-Visual Studio Codeの[アクティビティバー]の[Run and Debug]を選択します。launch.jsonとtasks.jsonが%新しいプロジェクトのルートフォルダ%\.vscodeに作成してbuildする前は[Run and Debug]ボタンが表示されますが、[Run and Debug]ボタンを選択するとbuildが開始され、Aspireの管理画面のリンクが[統合ターミナル]に表示されます。
+tasks.jsonのargsパラメーターについては[オフィシャルブログ「dotnet build」](https://learn.microsoft.com/ja-jp/dotnet/core/tools/dotnet-build?wt.mc_id=DT-MVP-4029060)を参照ください。また、launch.jsonのconfigurationsパラメーターについては[オフィシャルブログ「Configuring C# debugging」](https://code.visualstudio.com/docs/csharp/debugger-settings?wt.mc_id=DT-MVP-4029060)を参照してください。
+デバッグの準備が完了次第、Visual Studio Codeの[アクティビティバー]の[Run and Debug]を選択します。launch.jsonとtasks.jsonを%新しいプロジェクトのルートフォルダ%\.vscodeに作成してあっても、buildする前は[Run and Debug]ボタンが表示されます。[Run and Debug]ボタンを選択するとbuildが開始され、Aspireの管理画面のリンクが[統合ターミナル]に表示されます。
 
 <details><summary>Run and Debugペイン</summary>
 <img width="45%" title="Build後のRun and Debug" alt="Build後のRun and Debug" src="https://blog.processtune.com/wp-content/uploads/2025/06/VSCodeRunAndDebugWithoutButton.png">
 <img width="45%" title="Build前のRun and Debug" alt="Build前のRun and Debug" src="https://blog.processtune.com/wp-content/uploads/2025/06/VSCodeRunAndDebugWithButton.png">
 </details>
-起動後に[デバッグコンソール]に出力されるリンクをクリックするとブラウザに管理画面が表示されます。
+Aspireアプリケーションの起動後に[デバッグコンソール]に出力されるリンクをクリックするとブラウザに管理画面が表示されます。
 
 <details><summary>Aspireの実行</summary>
 ![Aspire管理画面](https://blog.processtune.com/wp-content/uploads/2025/06/AspireManageConsole.png "Aspire管理画面")
@@ -208,10 +209,39 @@ Webフロント側のエンドポイントを選択してAspireのWebアプリ�
 ![Aspire トレース画面](https://blog.processtune.com/wp-content/uploads/2025/06/ManageConsoleTrace.png "トレース画面")
 </details>
 
-このAspireソリューションに対して、SerilogSampleの時と同じようにファイルに出力します。Nugetパッケージを追加して、%新しいプロジェクトのルートフォルダ%\AspireSample.AppHost\program.csに以下のコードを追加します。
+## OpenTelemetryとの併用
 
+このAspireソリューションに対して、SerilogSampleの時と同じようにファイルに出力するケースとOpenTelemetryに出力するサンプルを作成しますので、%新しいプロジェクトのルートフォルダ%\AspireSample.AppHost\で前述のSerilogのNugetパッケージと「dotnet add package Serilog.Sinks.OpenTelemetry」を追加して、%新しいプロジェクトのルートフォルダ%\AspireSample.AppHost\program.csに以下のコードを追加します（OpenTelemetryは%新しいプロジェクトのルートフォルダ%\AspireSample.ServiceDefaults\Extensions.csに定義されています。ConfigureOpenTelemetryで「builder.Logging.AddOpenTelemetry」に追加できますが、ここでは解説の都合上Dependency injectionを使用しないロギングのサンプルを使ってます）。
+Dependency injectionを使う場合は、[GitHubのソースコードSerilog.Sinks.OpenTelemetry](https://github.com/serilog/serilog-sinks-opentelemetry/tree/dev/src/Serilog.Sinks.OpenTelemetry)が参考になります。
 
+```diff_c:csharp:%新しいプロジェクトのルートフォルダ%\AspireSample.AppHost\program.cs
++ #region using
++ using Microsoft.Extensions.Hosting;
++ using Microsoft.Extensions.Logging;
++ using Microsoft.Extensions.Configuration;
++ using Serilog;
++ using Serilog.Sinks.File;
++ using Serilog.Sinks.OpenTelemetry;
++ #endregion
 
+var builder = DistributedApplication.CreateBuilder(args);
++ Log.Logger = new LoggerConfiguration()
++     .WriteTo.File("logs/log.txt", rollingInterval: RollingInterval.Day)
++     .WriteTo.OpenTelemetry(endpoint: "http://127.0.0.1:4318",protocol: OtlpProtocol.Grpc)
++     .CreateLogger();
++ ILoggerFactory factory = LoggerFactory.Create(builder =>
++ {
++     builder.AddConsole();
++     builder.AddSerilog(Log.Logger, dispose: true);
++ });
++ Microsoft.Extensions.Logging.ILogger logger = factory.CreateLogger<Program>();
++ logger.LogInformation("Starting Aspire Sample Application build ApiService...");
+var apiService = builder.AddProject<Projects.AspireSample_ApiService>("apiservice");
++ logger.LogInformation("Starting Aspire Sample Application build Web...");
+builder.AddProject<Projects.AspireSample_Web>("webfrontend")
+    .WithExternalHttpEndpoints()
+    .WithReference(apiService)
+    .WaitFor(apiService);
 
-## オプションズ・パターン
-[Options pattern in .NET](https://learn.microsoft.com/ja-jp/dotnet/core/extensions/options?wt.mc_id=DT-MVP-4029060)を使うと構造化した設定値をクラスにマップできるので、構造化ログの書き出しに使うと可視性の良いトレースログを出力することができます。構造化ログとオプションズ・パターンの組合せは、特にマイクロサービスなど複数のプロセス間通信を必要とするアプリケーションやメッセージング・ミドルウェア分散アプリケーションなどの複数ドメイン間をまたぐようなアプリケーション、APIサービスを使ったマッシュアップ・アプリケーションなど分散トレーシングが有用なアプリケーションのログの出力時に使うことができます。
+builder.Build().Run();
+```
