@@ -5,9 +5,8 @@ tags:
   - '構造化ログ'
   - 'Generic Host'
   - 'C#'
-  - 'Options Pattern'
 private: false
-updated_at: '2025年6月20日'
+updated_at: '2025年7月14日'
 id: null
 organization_url_name: null
 slide: false
